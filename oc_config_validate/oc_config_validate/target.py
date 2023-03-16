@@ -299,7 +299,6 @@ class TestTarget():
             ValueError if the SubscribeResponse is invalid.
             GnmiError if no sync_response was received.
         """
-
         auth = self._GnmiAuthMetadata()
         notifications = []
         got_sync_response = False
