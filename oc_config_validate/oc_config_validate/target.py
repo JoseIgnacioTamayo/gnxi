@@ -110,23 +110,23 @@ class TestTarget():
     def gNMIConnect(self):
         """Create a gNMI connection to the target."""
         if self.notls:
-            self.channel = grpc.insecure_channel(self.address)
+            self.channel = grpc.aio.insecure_channel(self.address)
         else:
             creds = self._buildCredentials()
             logging.debug("creds: %s", creds)
             if self.host_tls_override:
-                self.channel = grpc.secure_channel(
+                self.channel = grpc.aio.secure_channel(
                     self.address, creds,
                     (('grpc.ssl_target_name_override',
                       self.host_tls_override,),))
             else:
-                self.channel = grpc.secure_channel(
+                self.channel = grpc.aio.secure_channel(
                     self.address, creds)
         self.stub = gnmi_pb2_grpc.gNMIStub(self.channel)
 
-    def gNMIClose(self):
+    async def gNMIClose(self):
         """Closes the gNMI connection to the target."""
-        self.channel.close()
+        await self.channel.close()
         self.stub = None
 
     def __enter__(self):
@@ -166,7 +166,7 @@ class TestTarget():
             return [('username', self.username), ('password', self.password)]
         return []
 
-    def gNMIGet(self, xpath: str) -> gnmi_pb2.GetResponse:
+    async def gNMIGet(self, xpath: str) -> gnmi_pb2.GetResponse:
         """Create a gNMI GetRequest.
 
         Args:
@@ -180,7 +180,7 @@ class TestTarget():
         """
         path = schema.parsePath(xpath)
         try:
-            return self.stub.Get(
+            return await self.stub.Get(
                 gnmi_pb2.GetRequest(path=[path], encoding='JSON_IETF'),
                 metadata=self._GnmiAuthMetadata())
         except _InactiveRpcError as err:
@@ -278,10 +278,10 @@ class TestTarget():
             json_data = json.load(file)
         self.gNMISetUpdate(xpath, json_data)
 
-    def _gNMISubscribe(self,
-                       request: gnmi_pb2.SubscribeRequest,
-                       timeout: int = 30
-                       ) -> List[gnmi_pb2.Notification]:
+    async def _gNMISubscribe(self,
+                             request: gnmi_pb2.SubscribeRequest,
+                             timeout: int = 30
+                             ) -> List[gnmi_pb2.Notification]:
         """Subscribes up to a timeout, returns the Notifications received.
 
         All Updates received are accumulated and returned when the channel is
@@ -302,28 +302,35 @@ class TestTarget():
         auth = self._GnmiAuthMetadata()
         notifications = []
         got_sync_response = False
-        try:
-            for resp in self.stub.Subscribe(
-                    iter([request]), timeout=timeout, metadata=auth):
-                if resp.sync_response:
+        subs_stream = self.stub.Subscribe(
+            iter([request]), timeout=timeout, metadata=auth)
+        while True:
+            try:
+                resp = await subs_stream.read()
+                if resp == grpc.aio.EOF:
+                    break
+                elif resp.sync_response:
                     got_sync_response = True
                 elif resp.update:
                     notifications.append(resp.update)
                 else:
                     raise ValueError("Invalid SubscribeResponse %s" % resp)
-        except _MultiThreadedRendezvous as err:
-            if err.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                return notifications
-            else:
+            except grpc.aio._call.AioRpcError as err:
+                if err.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    break
+                if err.code() == grpc.StatusCode.UNKNOWN and err.details() == "EOF":
+                    breakpoint()
+                else:
+                    raise RpcError(err) from err
+            except Exception as err:
                 raise RpcError(err) from err
-        except _InactiveRpcError as err:
-            raise RpcError(err) from err
         if not got_sync_response:
             raise schema.GnmiError(
                 "No Response with sync_response was received")
         return notifications
 
-    def gNMISubsOnce(self, xpaths: List[str]) -> List[gnmi_pb2.Notification]:
+    async def gNMISubsOnce(self,
+                           xpaths: List[str]) -> List[gnmi_pb2.Notification]:
         """Subscribes using ONCE mode, returns the Notifications received.
 
         Args:
@@ -333,10 +340,11 @@ class TestTarget():
             A list of gnmi_pb2.Notification objects received.
         """
         request = schema.gNMISubscriptionOnceRequest(xpaths)
-        return self._gNMISubscribe(request)
+        return await self._gNMISubscribe(request)
 
-    def gNMISubsStreamSample(self, xpath: str, sample_interval: int,
-                             timeout: int) -> List[gnmi_pb2.Notification]:
+    async def gNMISubsStreamSample(self, xpath: str,
+                                   sample_interval: int,
+                                   timeout: int) -> List[gnmi_pb2.Notification]:
         """Subscribes using STREAM mode, returns the Notifications received.
 
         Args:
@@ -350,7 +358,7 @@ class TestTarget():
         """
         request = schema.gNMISubscriptionStreamSampleRequest(
             [xpath], sample_interval)
-        return self._gNMISubscribe(request, timeout=timeout)
+        return await self._gNMISubscribe(request, timeout=timeout)
 
     def gNMISubsStreamOnChange(
             self,

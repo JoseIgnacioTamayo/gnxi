@@ -14,6 +14,7 @@ limitations under the License.
 
 """
 import argparse
+import asyncio
 import collections
 import logging
 import os
@@ -84,11 +85,11 @@ def createArgsParser() -> argparse.ArgumentParser:
     return parser
 
 
-def gNMIGet(test_target: target.TestTarget,
+async def gNMIGet(test_target: target.TestTarget,
             xpath: str) -> Optional[gnmi_pb2.TypedValue]:
     logging.info("Get(%s)", xpath)
     try:
-        resp = test_target.gNMIGet(xpath)
+        resp = await test_target.gNMIGet(xpath)
     except target.RpcError as err:
         logging.error("<= gRCP Error: %s", err)
         return None
@@ -99,12 +100,13 @@ def gNMIGet(test_target: target.TestTarget,
         return None
     logging.info("<= %s", resp_val)
 
-def gNMISubsOnce(test_target: target.TestTarget,
-                 xpaths: List[str]) -> Optional[
+
+async def gNMISubsOnce(test_target: target.TestTarget,
+                       xpaths: List[str]) -> Optional[
         List[gnmi_pb2.Notification]]:
     logging.info("SubscribeOnce(%s)", xpaths)
     try:
-        resp = test_target.gNMISubsOnce(xpaths)
+        resp = await test_target.gNMISubsOnce(xpaths)
     except target.RpcError as err:
         logging.error("<= gRCP Error: %s", err)
         return None
@@ -113,9 +115,9 @@ def gNMISubsOnce(test_target: target.TestTarget,
         return None
     logging.info("<= %s",
                  schema.notificationsJsonString(resp))
-    
 
-def gNMISubsStreamSample(
+
+async def gNMISubsStreamSample(
         test_target: target.TestTarget,
         xpath: str,
         sample_interval: int,
@@ -123,7 +125,7 @@ def gNMISubsStreamSample(
             Dict[str, List[Tuple[int, Any]]]]:
     logging.info("SubscribeStream(%s)", xpath)
     try:
-        resp = test_target.gNMISubsStreamSample(
+        resp = await test_target.gNMISubsStreamSample(
             xpath, sample_interval, timeout)
     except target.RpcError as err:
         logging.error("<= gRCP Error: %s", err)
@@ -144,8 +146,7 @@ def gNMISubsStreamSample(
     return stream_updates
 
 
-def main():  # noqa
-    
+async def main():  # noqa
     argparser = createArgsParser()
     args = vars(argparser.parse_args())
 
@@ -162,23 +163,21 @@ def main():  # noqa
                 "target_cert_as_root_ca"]:
         if args[arg]:
             setattr(ctx_tgt, arg, args[arg])
-
-    tgt = target.TestTarget(ctx_tgt)
     try:
-        tgt.validate()
+        ctx_tgt.validate()
     except ValueError as error:
         sys.exit("Invalid Target: %s" % error)
-
+    tgt = target.TestTarget(ctx_tgt)
     logging.info("Testing gNMI Target %s.", tgt)
 
-    tgt.gNMIConnnectSync()
-    gNMIGet(tgt, args["xpath"])
-    gNMISubsOnce(tgt, [args["xpath"]])
-    gNMISubsStreamSample(tgt, args["xpath"], 
-                         sample_interval=30*1000000000, 
-                         timeout=65)
-    tgt.gNMIClose()
+    tgt.gNMIConnect()
+    await gNMIGet(tgt, args["xpath"])
+    await gNMISubsOnce(tgt, [args["xpath"]])
+    await gNMISubsStreamSample(tgt, args["xpath"],
+                               sample_interval=30*1000000000,
+                               timeout=65)
+    await tgt.gNMIClose()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
