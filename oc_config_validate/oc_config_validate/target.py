@@ -33,6 +33,8 @@ from grpc._channel import _InactiveRpcError, _MultiThreadedRendezvous
 from oc_config_validate import context, schema
 from oc_config_validate.gnmi import gnmi_pb2, gnmi_pb2_grpc  # type: ignore
 
+SEC_TO_NSEC = 1000000000
+
 
 class BaseError(Exception):
     """Base Error for the target class"""
@@ -280,7 +282,9 @@ class TestTarget():
 
     def _gNMISubscribe(self,
                        request: gnmi_pb2.SubscribeRequest,
-                       timeout: int = 30
+                       timeout: int = 30,
+                       max_retries: int = 0,
+                       retry_delay: int = 0
                        ) -> List[gnmi_pb2.Notification]:
         """Subscribes up to a timeout, returns the Notifications received.
 
@@ -290,6 +294,8 @@ class TestTarget():
         Args:
             request: gNMI Subscription request to set.
             timeout: Seconds to keep the gRPC channel open.
+            max_retries: Maximum number of retries after gRCP Uknown errors.
+            retry_delay: Seconds to wait before a retry.
 
         Returns:
             A list of gnmi_pb2.Notification objects received.
@@ -314,12 +320,26 @@ class TestTarget():
                     raise ValueError("Invalid SubscribeResponse %s" % resp)
         except _MultiThreadedRendezvous as err:
             if err.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                return notifications
+                pass
+            elif err.code() == grpc.StatusCode.UNKNOWN:
+                if max_retries:
+                    logging.info(
+                        "Retrying gNMI Subscribe that failed with ErrorCode Unknown")
+                    time.sleep(retry_delay)
+                    notifications.extend(self._gNMISubscribe(
+                        request, timeout, False, max_retries-1,
+                        retry_delay))
+                pass
             else:
                 raise RpcError(err) from err
         except _InactiveRpcError as err:
             raise RpcError(err) from err
         if not got_sync_response:
+            raise schema.GnmiError(
+                "No Response with sync_response was received")
+        return notifications
+
+        if check_sync_response and not got_sync_response:
             raise schema.GnmiError(
                 "No Response with sync_response was received")
         return notifications
@@ -342,7 +362,7 @@ class TestTarget():
 
         Args:
             xpath: gNMI path to subscribe to.
-            sample_interval: Nanoseconds between updates.
+            sample_interval: Seconds between updates.
             timeout: Seconds to keep the gRPC channel open and receive
                 updates.
 
@@ -350,8 +370,10 @@ class TestTarget():
             A list of gnmi_pb2.Notification objects received.
         """
         request = schema.gNMISubscriptionStreamSampleRequest(
-            [xpath], sample_interval)
-        return self._gNMISubscribe(request, timeout=timeout)
+            [xpath], sample_interval * SEC_TO_NSEC)
+        return self._gNMISubscribe(request, timeout, True,
+                                   timeout//sample_interval,
+                                   sample_interval)
 
     def gNMISubsStreamOnChange(
             self,

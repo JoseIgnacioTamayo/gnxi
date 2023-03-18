@@ -283,7 +283,7 @@ class TestCase(unittest.case.TestCase):
 
         Args:
             xpath: gNMI path to subscribe to.
-            sample_interval: Nanoseconds between updates.
+            sample_interval: Seconds between updates.
             timeout: Seconds to keep the gRPC channel open and receive
                     updates.
 

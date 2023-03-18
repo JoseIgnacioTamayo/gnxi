@@ -49,7 +49,7 @@ class SubsSampleTestCase(testbase.TestCase):
 
         notifications = self.gNMISubsStreamSample(
             self.xpath,
-            self.sample_interval * SECS_TO_NSEC,
+            self.sample_interval,
             timeout=self.sample_timeout)
         self.assertIsNotNone(notifications, "No gNMI Subscribe response")
 
