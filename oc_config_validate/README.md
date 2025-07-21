@@ -116,7 +116,7 @@ looking for:
            [--target_cert_as_root_ca | --root_ca_cert FILE ] \
            [--cert_chain FILE --private_key FILE]
            [-init INIT_CONFIG_FILE -xpath INIT_CONFIG_XPATH] \
-           [--verbose] [--log_gnmi] [--stop_on_error]
+           [--verbose] [--log_gnmi] [--stop_on_error] [--log_timestamp]
     ```
 
     For an example:

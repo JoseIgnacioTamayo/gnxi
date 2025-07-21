@@ -49,5 +49,5 @@ files between 3 directories in the container and the host:
       -v oc_config_validate_results:/opt/oc_config_validate/results \
       joseignaciotamayo/oc_config_validate:latest \
        python3 -m oc_config_validate --tests_file tests/system.yaml \
-        --results_file results/system.json --stop_on_error --log_gnmi
+        --results_file results/system.json --stop_on_error --log_gnmi --log_timestamp
    ```
