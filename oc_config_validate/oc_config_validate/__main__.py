@@ -25,8 +25,6 @@ import yaml
 from oc_config_validate import (__version__, context, formatter, runner,
                                 schema, target, testbase)
 
-LOGGING_FORMAT = "%(levelname)s(%(filename)s:%(lineno)d):%(message)s"
-
 
 def createArgsParser() -> argparse.ArgumentParser:
     """Create parser for arguments passed into the program from the CLI.
@@ -160,6 +158,11 @@ def createArgsParser() -> argparse.ArgumentParser:
         action="store_true",
         help="Log the gnmi requests to the tests results.",
     )
+    parser.add_argument(
+        "--log_timestamp",
+        action="store_true",
+        help="Timestamp the log messages."
+    )
     return parser
 
 
@@ -208,11 +211,12 @@ def main():  # noqa
         sys.exit()
 
     if args["verbose"]:
-        # os.environ["GRPC_TRACE"] = "all"
         os.environ["GRPC_VERBOSITY"] = "DEBUG"
     logging.basicConfig(
         level=logging.DEBUG if args["verbose"] else logging.INFO,
-        format=LOGGING_FORMAT)
+        format=(("%(asctime)s>" if args["log_timestamp"] else "") +
+                "%(levelname)s(%(filename)s:%(lineno)d):%(message)s"),
+        datefmt="%X")
 
     try:
         validateArgs(args)

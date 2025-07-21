@@ -77,6 +77,7 @@ start_oc_config_validate() {
         --target "localhost:$1" --tests_file $BASEDIR/${t}_tests.yaml --results_file $BASEDIR/${t}_results.json \
         --init_config_file $BASEDIR/system_hostname_config.json --init_config_xpath "/system/config" \
         --target_cert_as_root_ca \
+        --log_timestamp \
         $OPTS
     done
   }
